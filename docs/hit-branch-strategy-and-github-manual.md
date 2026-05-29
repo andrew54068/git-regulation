@@ -89,6 +89,19 @@
 > - 每個 PR-merge commit 之 `parent[1]` 直接指向同步來源(sync 分支 HEAD),提供完整的「兩分支歷史交會點」追溯能力;無需 patch-id 或 commit message 對照。
 > - tag 之主要角色為「人類可讀」與「PM / 客服溝通用版本識別」;機制層面追溯由 git merge commit 的 parent 關係自動處理。
 
+> 💡 **改進建議 — 簡化 tag 機制(本 PR 提案)**
+>
+> 目前同一版本需打 2–3 個 tag(`release/v*` 與 `sync/fwd/v*` 同 commit、`sync/back/v*` 在 main 端),語意分工細,但維運紀律負擔不小——需確保兩端都打齊(§7 Phase C、§8.2 Phase C),易漏。
+>
+> 上一段已自承「機制層面追溯由 git merge commit 的 parent 關係自動處理」,意即 `sync/fwd/v*` 與 `sync/back/v*` **對機器而言是冗餘的**——其資訊已存在於 PR-merge commit 的雙 parent 結構中。且 `release/` 前綴本身只是為了與 `sync/*` 區分;同步 tag 移除後,前綴也失去用途——「v1.1.0」就是 `v1.1.0`,無需再加任何 namespace。
+>
+> **建議**:每個版本只打 **一個** tag,命名為 `v<X.Y.Z>`(例:`v1.1.0`、`v1.1.1`、`v1.2.0`),作為對內/對外統一的版本錨點;同步事件純粹靠 PR-merge commit 的 `parent[1]` 追溯,不再額外打 tag。對應需修改:
+> - §2.2 tag 表格 → 簡化為一列 `v<X.Y.Z>`,刪除 `release/v*` / `sync/fwd/v*` / `sync/back/v*`
+> - §6、§7 Phase C、§8.1 Phase C、§8.2 Phase C 的打 tag / push 指令改用 `v<X.Y.Z>`,並移除 sync 打 tag 步驟
+> - §10 checklist 的 tag 項目簡化為「`v<X.Y.Z>` 已打」
+>
+> 每個 `v<X.Y.Z>` tag 對應一次 GitHub Release(§6 流程不變),既是版本錨點也是對外發布識別點。
+
 ### 2.3 Commit message
 
 每筆 commit message **一律以英文撰寫**,格式如下:
