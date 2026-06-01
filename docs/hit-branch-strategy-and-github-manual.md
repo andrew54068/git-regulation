@@ -13,7 +13,7 @@
 >
 > **版本說明**:本 SOP 對應文件 1A v3.0「Release-Branch per Version」模型。
 > v1.0 採雙向 Rebase 機制,已知雙胞胎 commit 與 Q3 重複衝突問題;
-> v2.0 改採 `main` + `release` 雙長期分支 + PR-driven 雙向同步(`sync-fwd` / `sync-back`),消除雙胞胎與重複衝突;
+> v2.0 改採 `main` + `release` 雙長期分支 + PR-driven 雙向同步,消除雙胞胎與重複衝突;
 > v3.0 在確認 develop 與 release **環境無差異**後,移除長期 `release` 分支與雙向同步機制:
 > `release/v<X.Y.Z>` 於發佈時才從 `main` 切出並保留為該版本維護線;hotfix 在對應 release 分支上修正,再以 **cherry-pick**(經 PR)傳播回 `main` 及其他仍在用的 release 分支。
 
@@ -51,11 +51,10 @@ gitGraph
     branch "release/v1.1.0"
     commit tag: "v1.1.0"
     branch "hotfix/v1.1.0-crash-on-boot"
-    commit id: "hotfix-crash"
+    commit
     checkout "release/v1.1.0"
     merge "hotfix/v1.1.0-crash-on-boot" tag: "v1.1.1"
     checkout main
-    cherry-pick id: "hotfix-crash"
     branch "feature/search"
     commit
     checkout main
@@ -64,7 +63,7 @@ gitGraph
     commit tag: "v1.2.0"
 ```
 
-> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>` 分支並在其上打 `v<X.Y.Z>` tag;`hotfix/v<X.Y.Z>-*` 在對應 release 分支上修正,合併後打新的 patch tag(如 `v1.1.1`),再以 **cherry-pick** 將該修正傳播回 `main` 與其他仍在用的 release 分支(圖中 `v1.2.0` 即從已含此修正的 `main` 切出)。
+> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>` 分支並在其上打 `v<X.Y.Z>` tag;`hotfix/v<X.Y.Z>-*` 在對應 release 分支上修正,合併後打新的 patch tag(如 `v1.1.1`)。release 分支自 `main` 單向切出,**不回流 main**;hotfix 的跨版本傳播(cherry-pick 回 `main` 及其他在用 release)見 §7,為保持拓樸清晰本圖未繪出。
 >
 > 註:gitGraph 無法表達流程性註記(`rebase -i + FF`、`PR merge`、`cherry-pick 經 port 分支 + PR`)與 fast-forward 合併,本圖僅呈現分支與 tag 拓樸;完整操作流程見 §5 / §6 / §7。
 
@@ -73,7 +72,7 @@ gitGraph
 
 - **`main`** — 唯一長期主幹(即 develop),所有 feature/bug/refactor/test/chore 在此整合;受保護。
 - **`release/v<X.Y.Z>`** — 發佈時從 `main` 切出的版本發佈分支,切出後**保留**為該版本維護線(非持續同步的長期分支);每個版本一條,受保護。因 develop 與 release 環境無差異,「發佈」即「從 main 切分支 + 打 tag」,不需 staging 同步分支。
-- **無長期 `release` 分支、無 `sync-fwd` / `sync-back`** — release 分支按版本而生,用完(版本退役)即可刪;`main` 不是任何 release 的「下游」,而是所有未來 release 的來源,故不需反向同步。
+- **`release/v<X.Y.Z>` 按版本而生、非長期分支** — 用完(版本退役)即可刪;`main` 不是任何 release 的「下游」,而是所有未來 release 的來源。
 - **Hotfix** — 從對應 `release/v<X.Y.Z>` 切 `hotfix/v<X.Y.Z>-<name>`,修完經 PR 回該 release 分支並打 patch tag;隨即以 cherry-pick(經 `port/*` 分支 + PR)傳播至 `main` 及其他仍在用的 release 分支(紀律 2)。
 - **歷史結構**:`main` 以 `git log --first-parent` 觀察主線;每條 `release/v<X.Y.Z>` 為 `main` 某時點的快照,加上該版本專屬的 hotfix。
 
@@ -122,7 +121,6 @@ gitGraph
 
 ```
 [屬性] 意圖描述(說明「為什麼改」)
-------------------------------------------------------------
 
 - 條列「改了什麼、做了什麼」(模組級,不列函式細節)
 - 共 3–6 行為佳,最多不超過 10 行
@@ -133,7 +131,7 @@ gitGraph
 | **屬性** | `[feat]` / `[fix]` / `[hotfix]` / `[refactor]` / `[docs]` / `[test]` / `[chore]` / `[style]` / `[perf]`(**一律小寫**) |
 | **描述大小寫** | 描述內容**首字母大寫**(`[feat] Support ...`,非 `[feat] support ...`) |
 | **標題長度** | ≤ 72 字(含 `[屬性]`) |
-| **分隔線** | 標題下一行緊接 60 個 `-`,再空一行寫 body |
+| **標題與 body** | 標題與 body 之間空一行;body 以條列說明改動 |
 | **語意分工** | **標題寫意圖/為什麼**,body 寫**改了什麼**;不要只寫 `Update X`、`Change Y` 這類純動作 |
 
 type | 語意定義
@@ -152,7 +150,6 @@ type | 語意定義
 
 ```
 [feat] Support cross-subdomain SSO login
-------------------------------------------------------------
 
 - Replace session-based auth with OAuth2 authorization-code flow.
 - Add /oauth/callback endpoint and update User model schema.
@@ -385,7 +382,7 @@ git push origin v1.1.0
 ## 7. Hotfix 與跨版本傳播(cherry-pick)
 
 > **時機**:已發佈版本出現 bug,需要在對應 `release/v<X.Y.Z>` 上緊急修正,並把修正傳播到 `main` 及其他仍在用的版本。
-> **核心觀念**:`main` 與 `release/*` 皆受保護(紀律 1),hotfix 與其傳播**全部經 PR**;不再有反向同步分支(`sync-back`)——傳播改以 **cherry-pick** 主動推進。
+> **核心觀念**:`main` 與 `release/*` 皆受保護(紀律 1),hotfix 與其傳播**全部經 PR**;跨版本傳播以 **cherry-pick** 主動推進。
 
 ### 7.1 Hotfix(`hotfix/v*-*` → 對應 `release/v<X.Y.Z>`)
 
@@ -471,8 +468,6 @@ git push -u origin port/v1.1.1-crash-on-boot
 逐一對所有**受影響、仍在用**的分支重複(`main` 必做)。已退役、不再維護的舊 release 分支可略過。
 
 > **代價說明**:cherry-pick 會使同一修正在不同分支擁有不同 SHA(release 上的原 SHA + 各目標分支的新 SHA)。此雙 SHA 為一次性、有界,**不會**引發 v1.0 的 Q3 重複衝突(該問題源於對長期分支反覆雙向 rebase)。
->
-> **為何不再需要反向同步(`sync-back`)**:v2.0 中 `release` 是長期分支、為 `main` 的下游,故需把 hotfix「回流」main。v3.0 中 `main` 不是任何 release 的下游,而是**所有未來 release 的來源**;只要 hotfix 經 cherry-pick 進了 `main`,後續版本自然帶有此修正,無需反向同步分支。
 
 ---
 
