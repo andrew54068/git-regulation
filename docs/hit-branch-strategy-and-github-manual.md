@@ -50,6 +50,9 @@ gitGraph
     merge "bug/memory-leak"
     branch "release/v1.1.0"
     commit tag: "v1.1.0"
+    checkout main
+    merge "release/v1.1.0"
+    checkout "release/v1.1.0"
     branch "hotfix/v1.1.0-crash-on-boot"
     commit
     checkout "release/v1.1.0"
@@ -64,16 +67,16 @@ gitGraph
     commit tag: "v1.2.0"
 ```
 
-> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>` 分支並在其上打 `v<X.Y.Z>` tag;`hotfix/v<X.Y.Z>-*` 在對應 release 分支上修正,合併後打新的 patch tag(如 `v1.1.1`),隨後該 `release/v<X.Y.Z>` 分支經 PR **併回 `main`**,使修正回到主幹(圖中 `v1.2.0` 即從已含此修正的 `main` 切出)。
+> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>`、打 `v<X.Y.Z>` tag 後即經 PR 將該分支**併回 `main`**(發佈點回到主幹);其後若需修正,在該 release 分支上打 `hotfix/v<X.Y.Z>-*`、合併後打 patch tag(如 `v1.1.1`),**再次併回 `main`**。圖中 `v1.2.0` 即從已含這些變更的 `main` 切出。
 >
 > 註:gitGraph 無法表達流程性註記(`rebase -i + FF`、`PR merge`)與 fast-forward 合併,本圖僅呈現分支與 tag 拓樸;完整操作流程見 §5 / §6 / §7。
 
 > ⚠️ **核心鐵則 — 進入 `main` 與任何 `release/v<X.Y.Z>` 的整合一律透過 GitHub Pull Request**
-> `main` 與所有 `release/*` 皆為受保護分支,**禁止直接 push**。`feature/* / bug/* / refactor/* / test/* / chore/* → main`、`hotfix/v*-* → release/v<X.Y.Z>`、以及 hotfix 後 `release/v<X.Y.Z> → main` 的**併回**,**一律走 PR**。本地**不執行**直接 push 至長期 / 發佈分支。
+> `main` 與所有 `release/*` 皆為受保護分支,**禁止直接 push**。`feature/* / bug/* / refactor/* / test/* / chore/* → main`、`hotfix/v*-* → release/v<X.Y.Z>`、以及 `release/v<X.Y.Z> → main` 的**併回**(發佈點與每次 hotfix 後),**一律走 PR**。本地**不執行**直接 push 至長期 / 發佈分支。
 
 - **`main`** — 唯一長期主幹(即 develop),所有 feature/bug/refactor/test/chore 在此整合;受保護。
 - **`release/v<X.Y.Z>`** — 發佈時從 `main` 切出的版本發佈分支,切出後**保留**為該版本維護線(非持續同步的長期分支);每個版本一條,受保護。因 develop 與 release 環境無差異,「發佈」即「從 main 切分支 + 打 tag」,不需 staging 同步分支。
-- **`release/v<X.Y.Z>` 按版本而生、非長期主線** — 平時不與 `main` 同步;僅在 hotfix 後將該 release 分支併回 `main` 一次。版本退役後該分支可刪除。
+- **`release/v<X.Y.Z>` 按版本而生、非長期主線** — release 分支上的每次變更(發佈點、各 hotfix)都經 PR 併回 `main`,使主幹始終反映 release 內容。版本退役後該分支可刪除。
 - **Hotfix** — 從對應 `release/v<X.Y.Z>` 切 `hotfix/v<X.Y.Z>-<name>`,修完經 PR 回該 release 分支並打 patch tag;隨即將該 `release/v<X.Y.Z>` 分支經 PR **併回 `main`**(紀律 2),使修正回到主幹,後續從 `main` 切出的版本即自動帶有此修正。
 - **歷史結構**:`main` 以 `git log --first-parent` 觀察主線;每條 `release/v<X.Y.Z>` 為 `main` 某時點的快照,加上該版本專屬的 hotfix。
 
@@ -362,9 +365,12 @@ git pull --ff-only origin main
 
 # 從 main 切出版本發佈分支(release/* 受保護;由 Release Owner 建立)
 git checkout -b release/v1.1.0
+
+# (可選)發佈前置調整(版本號 bump、build flag 等)直接 commit 在 release 分支
+git commit -am "[chore] Prepare release v1.1.0"
 git push -u origin release/v1.1.0
 
-# 在 release 分支上打對外發佈 tag(指向切出點)
+# 在 release 分支上打對外發佈 tag
 git tag -a v1.1.0 -m "Release v1.1.0"
 git push origin v1.1.0
 ```
@@ -376,7 +382,7 @@ git push origin v1.1.0
 - 上傳產出物(韌體 bin / SDK zip / 安裝包)
 - 按 `Publish release`
 
-> `release/v1.1.0` 切出後即為該版本的維護線;平時**不與 `main` 同步**(兩者環境一致,發佈即快照)。若日後需 hotfix,於此分支修正並把該分支併回 `main`(見 §7)。版本退役後該分支可刪除。
+> 發版後,將 `release/v1.1.0` 經 PR **併回 `main`**(流程見 §7.2),使主幹取得發佈前置調整。`release/v1.1.0` 切出後即為該版本維護線;日後該版本的 hotfix 於此分支修正後,同樣再次併回 `main`(見 §7)。版本退役後該分支可刪除。
 
 ---
 
@@ -434,7 +440,9 @@ git push origin v1.1.1
 
 ### 7.2 將 release 併回 main(`release/v<X.Y.Z>` → `main`,經 PR;紀律 2:hotfix 不得累積)
 
-**打完 `v1.1.1` 後立刻啟動**。把帶有 hotfix 的 `release/v<X.Y.Z>` 分支經 PR 併回 `main`——後續從 `main` 切出的版本即自動含此修正。
+> 此「將 `release/v<X.Y.Z>` 併回 `main`」的流程會執行兩種時機:**(a) 發佈時**(§6,把發佈點 / 發佈前置調整併回主幹)、**(b) 每次 hotfix 後**(把該版本 patch 併回主幹);兩者步驟相同。
+
+**打完 patch tag(如 `v1.1.1`)後立刻啟動**。把帶有 hotfix 的 `release/v<X.Y.Z>` 分支經 PR 併回 `main`——後續從 `main` 切出的版本即自動含此修正。
 
 在 GitHub 開 Pull Request:
 
