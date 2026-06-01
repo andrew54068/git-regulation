@@ -14,8 +14,8 @@
 > **版本說明**:本 SOP 對應文件 1A v3.0「Release-Branch per Version」模型。
 > v1.0 採雙向 Rebase 機制,已知雙胞胎 commit 與 Q3 重複衝突問題;
 > v2.0 改採 `main` + `release` 雙長期分支 + PR-driven 雙向同步,消除雙胞胎與重複衝突;
-> v3.0 在確認 develop 與 release **環境無差異**後,移除長期 `release` 分支與雙向同步機制:
-> `release/v<X.Y.Z>` 於發佈時才從 `main` 切出並保留為該版本維護線;hotfix 在對應 release 分支上修正,再以 **cherry-pick**(經 PR)傳播回 `main` 及其他仍在用的 release 分支。
+> v3.0 在確認 develop 與 release **環境無差異**後,移除長期 `release` 分支:
+> `release/v<X.Y.Z>` 於發佈時才從 `main` 切出並保留為該版本維護線;hotfix 在對應 release 分支上修正後,再將該 release 分支經 PR **併回 `main`**,使修正回到主幹。
 
 ---
 
@@ -27,7 +27,7 @@
 4. [專案初始化(Step 1–4)](#4-專案初始化step-14)
 5. [日常開發流程(Step 5–11)](#5-日常開發流程step-511)
 6. [發佈版本(Step 12)](#6-發佈版本step-12)
-7. [Hotfix 與跨版本傳播(cherry-pick)](#7-hotfix-與跨版本傳播cherry-pick)
+7. [Hotfix 與併回 main](#7-hotfix-與併回-main)
 8. [角色與權限](#8-角色與權限)
 9. [檢核清單(Checklist)](#9-建議-檢核清單checklist-可依個人工作習慣或git-操作熟練度進行調整)
 
@@ -55,6 +55,7 @@ gitGraph
     checkout "release/v1.1.0"
     merge "hotfix/v1.1.0-crash-on-boot" tag: "v1.1.1"
     checkout main
+    merge "release/v1.1.0"
     branch "feature/search"
     commit
     checkout main
@@ -63,17 +64,17 @@ gitGraph
     commit tag: "v1.2.0"
 ```
 
-> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>` 分支並在其上打 `v<X.Y.Z>` tag;`hotfix/v<X.Y.Z>-*` 在對應 release 分支上修正,合併後打新的 patch tag(如 `v1.1.1`)。release 分支自 `main` 單向切出,**不回流 main**;hotfix 的跨版本傳播(cherry-pick 回 `main` 及其他在用 release)見 §7,為保持拓樸清晰本圖未繪出。
+> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>` 分支並在其上打 `v<X.Y.Z>` tag;`hotfix/v<X.Y.Z>-*` 在對應 release 分支上修正,合併後打新的 patch tag(如 `v1.1.1`),隨後該 `release/v<X.Y.Z>` 分支經 PR **併回 `main`**,使修正回到主幹(圖中 `v1.2.0` 即從已含此修正的 `main` 切出)。
 >
-> 註:gitGraph 無法表達流程性註記(`rebase -i + FF`、`PR merge`、`cherry-pick 經 port 分支 + PR`)與 fast-forward 合併,本圖僅呈現分支與 tag 拓樸;完整操作流程見 §5 / §6 / §7。
+> 註:gitGraph 無法表達流程性註記(`rebase -i + FF`、`PR merge`)與 fast-forward 合併,本圖僅呈現分支與 tag 拓樸;完整操作流程見 §5 / §6 / §7。
 
 > ⚠️ **核心鐵則 — 進入 `main` 與任何 `release/v<X.Y.Z>` 的整合一律透過 GitHub Pull Request**
-> `main` 與所有 `release/*` 皆為受保護分支,**禁止直接 push**。`feature/* / bug/* / refactor/* / test/* / chore/* → main`、`hotfix/v*-* → release/v<X.Y.Z>`、以及 hotfix 的 **cherry-pick 傳播**(經 `port/*` 分支),**一律走 PR**。本地**不執行**直接 push 至長期 / 發佈分支。
+> `main` 與所有 `release/*` 皆為受保護分支,**禁止直接 push**。`feature/* / bug/* / refactor/* / test/* / chore/* → main`、`hotfix/v*-* → release/v<X.Y.Z>`、以及 hotfix 後 `release/v<X.Y.Z> → main` 的**併回**,**一律走 PR**。本地**不執行**直接 push 至長期 / 發佈分支。
 
 - **`main`** — 唯一長期主幹(即 develop),所有 feature/bug/refactor/test/chore 在此整合;受保護。
 - **`release/v<X.Y.Z>`** — 發佈時從 `main` 切出的版本發佈分支,切出後**保留**為該版本維護線(非持續同步的長期分支);每個版本一條,受保護。因 develop 與 release 環境無差異,「發佈」即「從 main 切分支 + 打 tag」,不需 staging 同步分支。
-- **`release/v<X.Y.Z>` 按版本而生、非長期分支** — 用完(版本退役)即可刪;`main` 不是任何 release 的「下游」,而是所有未來 release 的來源。
-- **Hotfix** — 從對應 `release/v<X.Y.Z>` 切 `hotfix/v<X.Y.Z>-<name>`,修完經 PR 回該 release 分支並打 patch tag;隨即以 cherry-pick(經 `port/*` 分支 + PR)傳播至 `main` 及其他仍在用的 release 分支(紀律 2)。
+- **`release/v<X.Y.Z>` 按版本而生、非長期主線** — 平時不與 `main` 同步;僅在 hotfix 後將該 release 分支併回 `main` 一次。版本退役後該分支可刪除。
+- **Hotfix** — 從對應 `release/v<X.Y.Z>` 切 `hotfix/v<X.Y.Z>-<name>`,修完經 PR 回該 release 分支並打 patch tag;隨即將該 `release/v<X.Y.Z>` 分支經 PR **併回 `main`**(紀律 2),使修正回到主幹,後續從 `main` 切出的版本即自動帶有此修正。
 - **歷史結構**:`main` 以 `git log --first-parent` 觀察主線;每條 `release/v<X.Y.Z>` 為 `main` 某時點的快照,加上該版本專屬的 hotfix。
 
 ---
@@ -87,22 +88,21 @@ gitGraph
 | 分支 | 命名 | 來源 | 終點 | Commit type | 生命週期 |
 |---|---|---|---|---|---|
 | 主幹(develop) | `main` | — | — | — | 長期・受保護 |
-| 版本發佈分支 | `release/v<X.Y.Z>` | `main` | 切出後保留為版本維護線 | — | 版本線・受保護 |
+| 版本發佈分支 | `release/v<X.Y.Z>` | `main` | 切出後保留為版本維護線;hotfix 後經 PR 併回 `main` | — | 版本線・受保護 |
 | 新功能 | `feature/<精簡說明>` | `main` | PR-merge 進 `main` | `[feat]` | 短期 |
 | 缺陷修正 | `bug/<精簡說明>` | `main` | PR-merge 進 `main` | `[fix]` | 短期 |
 | 內部重構 | `refactor/<精簡說明>` | `main` | PR-merge 進 `main` | `[refactor]` | 短期 |
 | 測試補強 | `test/<精簡說明>` | `main` | PR-merge 進 `main` | `[test]` | 短期 |
 | 雜項維護 | `chore/<精簡說明>` | `main` | PR-merge 進 `main` | `[chore]` | 短期 |
 | 緊急修正 | `hotfix/v<X.Y.Z>-<精簡說明>` | `release/v<X.Y.Z>` | PR-merge 進該 `release/v<X.Y.Z>` | `[hotfix]` | 短期 |
-| Hotfix 傳播 | `port/v<X.Y.Z>-<精簡說明>` | 目標分支(`main` 或其他 `release/v*`) | cherry-pick 後 PR-merge 進目標分支 | `[hotfix]` | 短期 |
 
 > **分支類型補充說明**:
 > - **`refactor/*`**:內部結構調整,**不改變對外行為**(無新功能、無 bug 修正)。Reviewer 焦點為「對外行為是否真的沒變」。範例:`refactor/config-loader`、`refactor/auth-module`。
 > - **`test/*`**:僅新增或修改測試碼,**不動產品程式碼**。常用於補測試覆蓋率、加 regression test。範例:`test/add-integration-suite`、`test/coverage-auth`。
 > - **`chore/*`**:雜項維護——相依套件升級、build / CI 設定、檔案搬移、版本號 bump 等,**不影響產品邏輯**。範例:`chore/bump-deps`、`chore/update-cicd`、`chore/cleanup-build-scripts`。
-> - **`port/*`**:僅承載「將某 release 上的 hotfix 以 cherry-pick 傳播至另一分支」的動作,不含新邏輯;因 cherry-pick 沿用原 commit 訊息,其 commit type 即為 `[hotfix]`。範例:`port/v1.1.1-crash-on-boot`(將 `v1.1.1` 的 hotfix 傳播至 `main` 或其他 release 分支)。
-> - 上述短期分支整合流程一致(短期分支 → PR-merge 進目標分支),merge 方式採 `Rebase and merge` 或 `Squash and merge`(本模型對短期分支不限制 merge 方式)。
-> - 整合測試強度視類型而定:`refactor/*` 須完整跑(重構最易破壞行為);`chore/*` 視範圍而定(動 build 設定要全跑,僅升次要套件可較輕);`test/*` 通常只需驗證新測試本身可靠執行;`port/*` 須在目標分支上驗證被傳播的 hotfix 仍正確生效。
+> - 上述短期分支整合流程一致(短期分支 → PR-merge 進 `main`),merge 方式採 `Rebase and merge` 或 `Squash and merge`(本模型對短期分支不限制 merge 方式)。
+> - `release/v<X.Y.Z>` 雖為受保護的版本線,但其**併回 `main`** 仍透過 PR 完成(見 §7.2),merge 方式採 `Create a merge commit` 以保留該分支歷史。
+> - 整合測試強度視類型而定:`refactor/*` 須完整跑(重構最易破壞行為);`chore/*` 視範圍而定(動 build 設定要全跑,僅升次要套件可較輕);`test/*` 通常只需驗證新測試本身可靠執行。
 
 ### 2.2 Tag
 
@@ -113,7 +113,7 @@ gitGraph
 > **Tag 放置原則**:
 > - 每個版本只打 **一個** `v<X.Y.Z>` tag,落於對應的 `release/v<X.Y.Z>` 分支上:首發版本打在「從 main 切出的切出點」,patch 版本打在「hotfix 的 PR-merge commit」上。
 > - tag 之主要角色為「人類可讀的版本識別」(PM / 客服溝通用)。
-> - 跨版本的修正傳播由 **cherry-pick + PR** 處理(見 §7),不靠語意 tag 追溯。
+> - 修正回到主幹由 `release/v<X.Y.Z> → main` 的 PR merge 處理(見 §7),不靠語意 tag 追溯。
 
 ### 2.3 Commit message
 
@@ -138,7 +138,7 @@ type | 語意定義
 -- | --
 [feat] | 對外可見之新功能;改變使用者或呼叫方可觀察到的行為。
 [fix] | 修正 bug;對外行為與預期不符之修補(非緊急、走一般 feature/bug 流程者)。
-[hotfix] | 已發佈版本的線上緊急修正(在 `release/v<X.Y.Z>` 上修補),及其經 cherry-pick 的跨版本傳播(`port/*`)。
+[hotfix] | 已發佈版本的線上緊急修正(在 `release/v<X.Y.Z>` 上修補)。
 [refactor] | 內部結構調整,不改變對外行為(無新功能、無 bug 修正)。
 [perf] | 效能優化,不改變對外行為(若同時新增功能應拆為 [feat] commit)。
 [docs] | 僅變更文件、註解、README,不動產品程式碼。
@@ -160,10 +160,10 @@ type | 語意定義
 
 ## 3. 五大紀律
 
-1. **`main` 與 `release/*` 皆為受保護分支,禁止直接 push 與改寫歷史** — 不對 `main` 或任何 `release/v<X.Y.Z>` 執行直接 push、`git rebase`、`commit --amend`、`push --force` 或 `tag -f`。所有變更(含 hotfix 與 cherry-pick 傳播)一律透過短期分支與 PR 完成。
-2. **Hotfix 立即傳播,不得累積** — `hotfix/v<X.Y.Z>-<name>` 修完並打 patch tag 後,**立即**以 cherry-pick(經 `port/*` 分支 + PR)將修正傳播至 `main` 及其他仍在用的 `release/v*` 分支,於下一個 hotfix 開立前完成。漏傳會使後續從 `main` 切出的版本回歸該 bug。
-3. **Hotfix 為 cherry-pick 衝突之權威來源** — cherry-pick 傳播至 `main` 或其他 release 分支若發生衝突,**一律以 release 上之 hotfix 內容為準**;目標分支既有實作雖意圖相近,但未經 production 驗證,需被 hotfix 覆蓋。
-4. **短期分支整合原則** — `feature/*` / `bug/*` / `refactor/*` / `test/*` / `chore/*` / `hotfix/*` / `port/*` 在 PR-merge 前必須完成 `rebase -i` 整理 + 對應整合測試;PR CI 必須對「合併後狀態」完整測試。
+1. **`main` 與 `release/*` 皆為受保護分支,禁止直接 push 與改寫歷史** — 不對 `main` 或任何 `release/v<X.Y.Z>` 執行直接 push、`git rebase`、`commit --amend`、`push --force` 或 `tag -f`。所有變更(含 hotfix 與 `release → main` 併回)一律透過 PR 完成。
+2. **Hotfix 立即併回 main,不得累積** — `hotfix/v<X.Y.Z>-<name>` 修完並打 patch tag 後,**立即**將該 `release/v<X.Y.Z>` 分支經 PR 併回 `main`,於下一個 hotfix 開立前完成。漏併會使後續從 `main` 切出的版本回歸該 bug。
+3. **Hotfix 為併回衝突之權威來源** — 將 `release/v<X.Y.Z>` 併回 `main` 若發生衝突,**一律以 release 上之 hotfix 內容為準**;`main` 上既有實作雖意圖相近,但未經 production 驗證,需被 hotfix 覆蓋。
+4. **短期分支整合原則** — `feature/*` / `bug/*` / `refactor/*` / `test/*` / `chore/*` / `hotfix/*` 在 PR-merge 前必須完成 `rebase -i` 整理 + 對應整合測試;PR CI 必須對「合併後狀態」完整測試。
 5. **PR 必附測試紀錄** — 任何進到 `main` 或 `release/v*` 的 PR,**必須在 PR description 附上對應的測試紀錄**(編譯結果、單元測試輸出、整合測試報告、實機驗證截圖等,視變更性質而定)。缺測試紀錄者,Reviewer 直接 `Request changes`,Release Owner 不予 merge。CI 上線前,此為唯一的品質防線。
 
 ---
@@ -197,12 +197,12 @@ cd <repo>
 - 兩條規則皆勾選 `Require a pull request before merging`
 - 兩條規則皆勾選 `Require status checks to pass before merging`
 - `Restrict who can push to matching branches` → 僅 Release Owner(含「建立新的 `release/v*` 分支」與「打 `v<X.Y.Z>` tag」的權限)
-- `Require linear history`:**可選**,依團隊偏好(本模型不強制 merge commit,短期分支可用 Rebase / Squash)
+- `Require linear history`:**不要勾選**(`release/v<X.Y.Z>` 併回 `main` 需要 merge commit,勾此項會禁掉「Create a merge commit」)
 
 並到 `Settings → General → Pull Requests`:
-- ✅ 勾選 `Allow merge commits`
+- ✅ 勾選 `Allow merge commits`(必需,`release → main` 併回依賴此選項)
 - `Allow squash merging` / `Allow rebase merging`:依團隊偏好保留(短期分支整合常用)
-- ✅ 勾選 `Automatically delete head branches`(PR-merge 後自動刪除短期 / `port/*` 分支)
+- ⚠️ `Automatically delete head branches`:方便短期分支自動清理,但**會在 `release/v<X.Y.Z> → main` 併回 PR 合併後刪除該 release 分支**。`release/*` 是要保留的版本線,故合併此類 PR 後需**手動還原**該分支(branch 頁面 `Restore`),或對此類 PR **不要**使用自動刪除。
 
 ### Step 3 — 建立 Project(看板)
 
@@ -330,12 +330,13 @@ git push -u origin feature/notification-system
 
 | 分支類型 | 建議 Merge 方式 | 說明 |
 |---|---|---|
-| 短期分支 → 目標分支<br>(`feature/*` / `bug/*` / `refactor/*` / `test/*` / `chore/*` / `hotfix/*` / `port/*`) | **Rebase and merge** 或 **Squash and merge** | 短期分支已 `rebase -i` 整理,進長期 / 發佈分支保持乾淨歷史。Squash 適用於 commit 凌亂或希望壓成單筆。 |
+| 短期分支 → 目標分支<br>(`feature/*` / `bug/*` / `refactor/*` / `test/*` / `chore/*` / `hotfix/*`) | **Rebase and merge** 或 **Squash and merge** | 短期分支已 `rebase -i` 整理,進長期 / 發佈分支保持乾淨歷史。Squash 適用於 commit 凌亂或希望壓成單筆。 |
+| `release/v<X.Y.Z>` → `main`(hotfix 併回) | **Create a merge commit** | 保留 release 版本線的歷史與雙 parent(見 §7.2)。 |
 
-> 因 v3.0 已移除雙向同步分支,不再有「必須使用 Create a merge commit」的特例;所有進入 `main` 與 `release/v*` 的 merge 皆走一般短期分支流程。唯一不可妥協的是**目標分支受保護、必須經 PR**(紀律 1)。
+> 唯一不可妥協的是**目標分支受保護、必須經 PR**(紀律 1)。
 
 合併後:
-- 短期分支自動刪除(若勾了 `Automatically delete head branches`)
+- 短期分支自動刪除(若勾了 `Automatically delete head branches`);**但 `release/v*` 併回 PR 例外——勿刪該版本線(見 §4 Step 2 警語)**
 - PR description 寫的 `Closes #42` 會自動關閉對應 Issue
 - Project 上的卡片自動移到 `Done`
 
@@ -375,14 +376,14 @@ git push origin v1.1.0
 - 上傳產出物(韌體 bin / SDK zip / 安裝包)
 - 按 `Publish release`
 
-> `release/v1.1.0` 切出後即為該版本的維護線,後續任何變更(hotfix)一律經 PR 進此分支(見 §7),**不再與 `main` 持續同步**——兩者環境一致,發佈即快照。版本退役後該分支可刪除。
+> `release/v1.1.0` 切出後即為該版本的維護線;平時**不與 `main` 同步**(兩者環境一致,發佈即快照)。若日後需 hotfix,於此分支修正並把該分支併回 `main`(見 §7)。版本退役後該分支可刪除。
 
 ---
 
-## 7. Hotfix 與跨版本傳播(cherry-pick)
+## 7. Hotfix 與併回 main
 
-> **時機**:已發佈版本出現 bug,需要在對應 `release/v<X.Y.Z>` 上緊急修正,並把修正傳播到 `main` 及其他仍在用的版本。
-> **核心觀念**:`main` 與 `release/*` 皆受保護(紀律 1),hotfix 與其傳播**全部經 PR**;跨版本傳播以 **cherry-pick** 主動推進。
+> **時機**:已發佈版本出現 bug,需要在對應 `release/v<X.Y.Z>` 上緊急修正,並把修正帶回 `main`(主幹),使後續版本不再回歸。
+> **核心觀念**:`main` 與 `release/*` 皆受保護(紀律 1),hotfix 與其併回 `main` **全部經 PR**。
 
 ### 7.1 Hotfix(`hotfix/v*-*` → 對應 `release/v<X.Y.Z>`)
 
@@ -427,47 +428,40 @@ git tag -a v1.1.1 -m "Hotfix release v1.1.1"
 git push origin v1.1.1
 ```
 
-→ 接 §6 在 GitHub 發佈 Release。打完 tag 後**立即**進行 §7.2 傳播(紀律 2)。
+→ 接 §6 在 GitHub 發佈 Release。打完 tag 後**立即**進行 §7.2 併回 `main`(紀律 2)。
 
 ---
 
-### 7.2 跨版本傳播(cherry-pick 經 `port/*` 分支 + PR,紀律 2:hotfix 不得累積)
+### 7.2 將 release 併回 main(`release/v<X.Y.Z>` → `main`,經 PR;紀律 2:hotfix 不得累積)
 
-**打完 `v1.1.1` 後立刻啟動**。對**每一個**需要此修正的目標分支重複以下流程——必含 `main`(否則後續從 `main` 切出的版本會回歸此 bug),以及其他仍在用的 `release/v*` 分支。
+**打完 `v1.1.1` 後立刻啟動**。把帶有 hotfix 的 `release/v<X.Y.Z>` 分支經 PR 併回 `main`——後續從 `main` 切出的版本即自動含此修正。
 
-```bash
-# 0. 先取得 hotfix 在 release 上的 commit SHA
-git checkout release/v1.1.0
-git pull --ff-only origin release/v1.1.0
-git log --oneline -5        # 找出 hotfix 的 commit SHA(記為 <hotfix-sha>)
-
-# 1. 對「目標分支」切 port 分支(以 main 為例;其他 release/v* 同理)
-git checkout main
-git pull --ff-only origin main
-git checkout -b port/v1.1.1-crash-on-boot
-
-# 2. cherry-pick 該 hotfix
-git cherry-pick <hotfix-sha>
-#    若衝突:一律以 hotfix 為權威(紀律 3),解完後
-#    git add <file> && git cherry-pick --continue
-
-# 3. 推上去等 PR
-git push -u origin port/v1.1.1-crash-on-boot
-```
-
-透過 PR 合併進目標分支(`main` 與 `release/*` 皆受保護,**必經 PR**):
+在 GitHub 開 Pull Request:
 
 | PR 設定 | 值 |
 |---|---|
-| **base 分支** | 目標分支(`main`,或其他 `release/v<X.Y.Z>`) |
-| **compare 分支** | `port/v1.1.1-crash-on-boot` |
-| **Title** | `[hotfix] Backport v1.1.1 crash-on-boot fix to <target>` |
+| **base 分支** | `main` |
+| **compare 分支** | `release/v1.1.0` |
+| **Title** | `[hotfix] Merge v1.1.1 crash-on-boot fix back to main` |
 | **Description** | 連結到 `v1.1.1` Release / 原 hotfix PR;附驗證紀錄(紀律 5) |
-| **Merge 方式** | **Rebase and merge** 或 **Squash and merge** |
+| **Merge 方式** | **Create a merge commit**(保留 release 版本線歷史) |
 
-逐一對所有**受影響、仍在用**的分支重複(`main` 必做)。已退役、不再維護的舊 release 分支可略過。
+PR 開立後流程:
+1. 因 `release/v1.1.0` 是從 `main` 切出、之後只多了 hotfix,故此 PR 的實際差異即「**只有 hotfix**」(merge base = 切出點;`main` 端既有的 feature 不受影響)。
+2. Review + CI 全綠後,由 **Release Owner** 在 GitHub 按 **`Create a merge commit`**。
+3. **合併後不要刪除** `release/v1.1.0`(它是保留的版本線);若 repo 開了 `Automatically delete head branches`,於 branch 頁面 `Restore` 還原(見 §4 Step 2)。
 
-> **代價說明**:cherry-pick 會使同一修正在不同分支擁有不同 SHA(release 上的原 SHA + 各目標分支的新 SHA)。此雙 SHA 為一次性、有界,**不會**引發 v1.0 的 Q3 重複衝突(該問題源於對長期分支反覆雙向 rebase)。
+> **衝突處理**:若 `main` 自切出後已改動 hotfix 觸及的同一檔案,PR 會顯示衝突。**一律以 release 上之 hotfix 為權威**(紀律 3)。由於 `main` / `release/*` 皆受保護不可直接 push,需開一條**暫時整合分支**解衝突後再回填(僅此情境使用,解完即刪):
+> ```bash
+> git checkout -b tmp/merge-v1.1.1-to-main main
+> git merge release/v1.1.0      # 解衝突,以 hotfix 為準(紀律 3)
+> git commit
+> git push -u origin tmp/merge-v1.1.1-to-main
+> # 將此 PR 的 base 改為 main、compare 改為 tmp/merge-v1.1.1-to-main,合併後刪除暫時分支
+> ```
+> 無衝突時則無需暫時分支,直接以 `release/v1.1.0 → main` 的 PR 合併即可。
+
+> **同一版本多個 hotfix**:`release/v1.1.0` 上每打一次 patch(`v1.1.2`...)就重複 §7.2 一次,把該分支再次併回 `main`。
 
 ---
 
@@ -476,8 +470,8 @@ git push -u origin port/v1.1.1-crash-on-boot
 | 角色 | 權限 | 職責 |
 |---|---|---|
 | **Repo Owner** | Admin | 建 repo、設定 `main` 與 `release/*` 的 branch protection、CODEOWNERS |
-| **Release Owner** | Maintain | 唯一可 merge 進 `main` / `release/v*` 的角色;建立 `release/v<X.Y.Z>` 分支;打 `v<X.Y.Z>` tag;發 GitHub Release;主導 hotfix 的 cherry-pick 傳播 |
-| **Developer** | Write | 建 `feature/*` / `bug/*` / `hotfix/*` / `port/*` 分支、發 PR、回應 review |
+| **Release Owner** | Maintain | 唯一可 merge 進 `main` / `release/v*` 的角色;建立 `release/v<X.Y.Z>` 分支;打 `v<X.Y.Z>` tag;發 GitHub Release;主導 hotfix 併回 `main` |
+| **Developer** | Write | 建 `feature/*` / `bug/*` / `hotfix/*` 分支、發 PR、回應 review |
 | **Reviewer** | Write | 審查 PR、Approve / Request changes |
 
 GitHub 設定路徑:
@@ -509,13 +503,14 @@ GitHub 設定路徑:
 - [ ] PR base 分支正確:
   - `feature/*` / `bug/*` / `refactor/*` / `test/*` / `chore/*` → `main`
   - `hotfix/*` → 對應 `release/v<X.Y.Z>`
-  - **`port/*`(hotfix 傳播)→ 目標分支(`main` 或其他 `release/v*`)**
+  - **hotfix 併回:`release/v<X.Y.Z>` → `main`(用 Create a merge commit)**
 - [ ] 目標分支受保護、確實經 PR(無人直接 push `main` / `release/*`;紀律 1)
 
 ### Hotfix 完成後(紀律 2,暫定)
 
 - [ ] hotfix PR 已 merge 進對應 `release/v<X.Y.Z>` 且已打 patch `v<X.Y.Z>` tag
-- [ ] **已立即** cherry-pick 傳播至 `main`(必做)及其他仍在用的 `release/v*` 分支(經 `port/*` + PR)
+- [ ] **已立即**將 `release/v<X.Y.Z>` 經 PR 併回 `main`(必做)
+- [ ] 併回 PR 合併後 `release/v<X.Y.Z>` **未被誤刪**(版本線保留)
 - [ ] 對外發佈版本已升 GitHub Release
 - [ ] Project 上對應卡片已移到 Done
-- [ ] 短期分支與 `port/*` 分支(local + remote)已刪除
+- [ ] 短期分支(local + remote)已刪除

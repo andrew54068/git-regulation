@@ -6,7 +6,7 @@
 
 | 文件 | 說明 |
 |---|---|
-| [Hit 分支策略與 GitHub 操作手冊](docs/hit-branch-strategy-and-github-manual.md) | `main` 單一長期主幹 + 依版本切出 `release/v<X.Y.Z>` 發佈分支的 **Release-Branch per Version v3.0** 模型(`main` 與 `release/*` 皆受保護):命名規範、五大紀律、專案初始化、日常開發流程、發佈、Hotfix 與跨版本 cherry-pick 傳播、角色權限、檢核清單。 |
+| [Hit 分支策略與 GitHub 操作手冊](docs/hit-branch-strategy-and-github-manual.md) | `main` 單一長期主幹 + 依版本切出 `release/v<X.Y.Z>` 發佈分支的 **Release-Branch per Version v3.0** 模型(`main` 與 `release/*` 皆受保護):命名規範、五大紀律、專案初始化、日常開發流程、發佈、Hotfix 與併回 main、角色權限、檢核清單。 |
 
 ## 結構
 
