@@ -99,13 +99,13 @@ gitGraph
 | 測試補強 | `test/<精簡說明>` | `main` | PR-merge 進 `main` | `[test]` | 短期 |
 | 雜項維護 | `chore/<精簡說明>` | `main` | PR-merge 進 `main` | `[chore]` | 短期 |
 | 緊急修正 | `hotfix/v<X.Y.Z>-<精簡說明>` | `release/v<X.Y.Z>` | PR-merge 進該 `release/v<X.Y.Z>` | `[hotfix]` | 短期 |
-| Hotfix 傳播 | `port/v<X.Y.Z>-<精簡說明>` | 目標分支(`main` 或其他 `release/v*`) | cherry-pick 後 PR-merge 進目標分支 | `[hotfix]` | 短期 |
+| Hotfix 傳播 | `port/v<X.Y.Z>-<精簡說明>-to-<目標>` | 目標分支(`main` 或其他 `release/v*`) | cherry-pick 後 PR-merge 進目標分支 | `[hotfix]` | 短期 |
 
 > **分支類型補充說明**:
 > - **`refactor/*`**:內部結構調整,**不改變對外行為**(無新功能、無 bug 修正)。Reviewer 焦點為「對外行為是否真的沒變」。範例:`refactor/config-loader`、`refactor/auth-module`。
 > - **`test/*`**:僅新增或修改測試碼,**不動產品程式碼**。常用於補測試覆蓋率、加 regression test。範例:`test/add-integration-suite`、`test/coverage-auth`。
 > - **`chore/*`**:雜項維護——相依套件升級、build / CI 設定、檔案搬移、版本號 bump 等,**不影響產品邏輯**。範例:`chore/bump-deps`、`chore/update-cicd`、`chore/cleanup-build-scripts`。
-> - **`port/*`**:僅承載「將某 release 上的 hotfix 以 cherry-pick 傳播至另一分支」的動作,不含新邏輯;因 cherry-pick 沿用原 commit 訊息,其 commit type 即為 `[hotfix]`。範例:`port/v1.1.1-crash-on-boot`(將 `v1.1.1` 的 hotfix 傳播至 `main` 或其他 release 分支)。
+> - **`port/*`**:僅承載「將某 release 上的 hotfix 以 cherry-pick 傳播至另一分支」的動作,不含新邏輯;因 cherry-pick 沿用原 commit 訊息,其 commit type 即為 `[hotfix]`。**每個目標分支各開一條 port 分支**,名稱結尾以 `-to-<目標>` 標明去處(`main`,或目標 release 的版本如 `v1.2.0`),避免同一 hotfix 傳播到多個目標時撞名。範例:同一個 `v1.1.1` hotfix 要同時傳播到 `main` 與 `release/v1.2.0`,即開 `port/v1.1.1-crash-on-boot-to-main` 與 `port/v1.1.1-crash-on-boot-to-v1.2.0` 兩條。
 > - 上述短期分支整合流程一致(短期分支 → PR-merge 進目標分支),merge 方式採 `Rebase and merge` 或 `Squash and merge`(本模型對短期分支不限制 merge 方式)。
 > - 整合測試強度視類型而定:`refactor/*` 須完整跑(重構最易破壞行為);`chore/*` 視範圍而定(動 build 設定要全跑,僅升次要套件可較輕);`test/*` 通常只需驗證新測試本身可靠執行;`port/*` 須在目標分支上驗證被傳播的 hotfix 仍正確生效。
 
@@ -446,10 +446,10 @@ git checkout release/v1.1.0
 git pull --ff-only origin release/v1.1.0
 git log --oneline -5        # 找出 hotfix 的 commit SHA(記為 <hotfix-sha>)
 
-# 1. 對「目標分支」切 port 分支(以 main 為例;其他 release/v* 同理)
+# 1. 對「目標分支」切 port 分支(分支名以 -to-<目標> 結尾,避免撞名;以 main 為例)
 git checkout main
 git pull --ff-only origin main
-git checkout -b port/v1.1.1-crash-on-boot
+git checkout -b port/v1.1.1-crash-on-boot-to-main
 
 # 2. cherry-pick 該 hotfix
 git cherry-pick <hotfix-sha>
@@ -457,7 +457,13 @@ git cherry-pick <hotfix-sha>
 #    git add <file> && git cherry-pick --continue
 
 # 3. 推上去等 PR
-git push -u origin port/v1.1.1-crash-on-boot
+git push -u origin port/v1.1.1-crash-on-boot-to-main
+
+# 4. 對其他在用 release(如 release/v1.2.0)重複,分支名改為 -to-v1.2.0:
+#    git checkout release/v1.2.0 && git pull --ff-only origin release/v1.2.0
+#    git checkout -b port/v1.1.1-crash-on-boot-to-v1.2.0
+#    git cherry-pick <hotfix-sha>
+#    git push -u origin port/v1.1.1-crash-on-boot-to-v1.2.0
 ```
 
 透過 PR 合併進目標分支(`main` 與 `release/*` 皆受保護,**必經 PR**):
@@ -465,7 +471,7 @@ git push -u origin port/v1.1.1-crash-on-boot
 | PR 設定 | 值 |
 |---|---|
 | **base 分支** | 目標分支(`main`,或其他 `release/v<X.Y.Z>` 如 `release/v1.2.0`) |
-| **compare 分支** | `port/v1.1.1-crash-on-boot` |
+| **compare 分支** | 對應的 port 分支:`port/v1.1.1-crash-on-boot-to-main`(對 `main`)、`port/v1.1.1-crash-on-boot-to-v1.2.0`(對 `release/v1.2.0`) |
 | **Title** | `[hotfix] Backport v1.1.1 crash-on-boot fix to <target>` |
 | **Description** | 連結到 `v1.1.1` Release / 原 hotfix PR;附驗證紀錄(紀律 5) |
 | **Merge 方式** | **Rebase and merge** 或 **Squash and merge** |
