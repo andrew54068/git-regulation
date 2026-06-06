@@ -51,6 +51,7 @@ gitGraph
     branch "release/v1.1.0"
     commit tag: "v1.1.0"
     checkout main
+    merge "release/v1.1.0"
     branch "feature/search"
     commit
     checkout main
@@ -63,9 +64,15 @@ gitGraph
     checkout "release/v1.1.0"
     merge "hotfix/v1.1.0-crash-on-boot" tag: "v1.1.1"
     checkout main
+    branch "port/v1.1.0-to-main"
+    cherry-pick id: "hotfix-crash"
+    checkout main
+    merge "port/v1.1.0-to-main"
+    checkout "release/v1.2.0"
+    branch "port/v1.1.0-to-releasev1.2.0"
     cherry-pick id: "hotfix-crash"
     checkout "release/v1.2.0"
-    cherry-pick id: "hotfix-crash"
+    merge "port/v1.1.0-to-releasev1.2.0"
 ```
 
 > 圖中以 gitGraph 呈現分支拓樸與 tag:`feature/*` / `bug/*` 併入 `main`;發佈時從 `main` 切出 `release/v<X.Y.Z>` 分支並在其上打 `v<X.Y.Z>` tag(可同時有多條在用的 release 線,如 `v1.1.0` 與 `v1.2.0`);`hotfix/v<X.Y.Z>-*` 在對應 release 分支上修正,合併後打新的 patch tag(如 `v1.1.1`),再以 **cherry-pick** 將該修正傳播至 `main` 與其他仍在用的 release 分支(圖中傳播至 `main` 與 `release/v1.2.0`)。
