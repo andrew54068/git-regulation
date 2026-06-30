@@ -35,9 +35,45 @@
 
 ## 1. 核心模型
 
-<img width="935" alt="核心模型" src="images/01-core-model.png" />
+```mermaid
+%%{init: {'gitGraph': {'showCommitLabel': false, 'mainBranchName': 'main'}} }%%
+gitGraph
+    commit
+    branch release
+    checkout main
+    branch feature-notification-system
+    commit
+    commit
+    checkout main
+    merge feature-notification-system
+    branch sync-fwd-v1.1.0
+    commit
+    checkout release
+    merge sync-fwd-v1.1.0 tag: "v1.1.0"
+    checkout main
+    branch bug-memory-leak
+    commit
+    checkout main
+    merge bug-memory-leak
+    checkout release
+    branch hotfix-v1.1.0-crash-on-boot
+    commit
+    checkout release
+    merge hotfix-v1.1.0-crash-on-boot tag: "v1.1.1"
+    branch sync-back-v1.1.1
+    commit
+    checkout main
+    merge sync-back-v1.1.1
+    checkout main
+    branch sync-fwd-v1.2.0
+    commit
+    checkout release
+    merge sync-fwd-v1.2.0 tag: "v1.2.0"
+```
 
-> 圖中:`main` 上方為短期功能/缺陷分支(feature-* / bug-*),下方為 `sync-fwd / sync-back` 同步暫存分支,最下方為 `release` 分支與 `hotfix-v*-*`。同步事件以 tag 標示(`release/v*` 與 `sync/fwd/v*` 在 release 端 PR-merge commit 上;`sync/back/v*` 在 main 端 PR-merge commit 上)。
+> 圖中以 gitGraph 呈現分支拓樸與 tag:`feature-*` / `bug-*` 併入 `main`;`sync-fwd-v*` 將 `main` 正向同步進 `release`,`sync-back-v*` 將 `release` 反向回流 `main`;`hotfix-v*-*` 在 `release` 上緊急修正。每個版本只打**單一** `v<X.Y.Z>` tag,落於 release 端的 PR-merge commit(正向同步或 hotfix);反向同步**不打 tag**,同步方向由 PR-merge commit 的雙 parent 結構追溯。
+>
+> 註:gitGraph 無法表達流程性註記(`rebase -i + FF`、`PR merge to main / release`、`hotfix on release`)與 fast-forward 合併,本圖僅呈現分支與 tag 拓樸;完整操作流程見 §5 / §7 / §8。
 
 > ⚠️ **核心鐵則 — 所有分支間的合併皆透過 GitHub Pull Request 完成**
 > 不論是 `feature-* / bug-* → main`、`hotfix-v*-* → release`、`sync-fwd-v* → release`、`sync-back-v* → main`,**一律走 PR**。本地**不執行** `git merge` 至長期分支;sync 分支上**亦不做本地 merge / rebase**,僅作為 PR 載具。整合動作只由 Release Owner 在 GitHub 介面上按「**Create a merge commit**」按鈕完成。
@@ -79,15 +115,12 @@
 
 | Tag | 用途 | 打在 | 是否升 GitHub Release |
 |---|---|---|---|
-| `release/v<X.Y.Z>` | 對外發佈版本錨點 | **release 端** PR-merge commit | ✅ 是 |
-| `sync/fwd/v<X.Y.Z>` | 正向同步事件錨點 | **release 端** PR-merge commit(與 `release/v*` 同一 commit) | ❌ 否 |
-| `sync/back/v<X.Y.Z>` | 反向同步事件錨點 | **main 端** PR-merge commit | ❌ 否 |
+| `v<X.Y.Z>` | 對內/對外統一版本錨點 | **release 端** PR-merge commit(正向同步或 hotfix) | ✅ 是 |
 
-> **Tag 放置原則(v2.0)**:
-> - `release/v*` 與 `sync/fwd/v*` 同時打在 release 端的 PR-merge commit 上(同一 commit、不同語意 tag)。
-> - `sync/back/v*` 打在 main 端的 PR-merge commit 上(反向回流落地點)。
-> - 每個 PR-merge commit 之 `parent[1]` 直接指向同步來源(sync 分支 HEAD),提供完整的「兩分支歷史交會點」追溯能力;無需 patch-id 或 commit message 對照。
-> - tag 之主要角色為「人類可讀」與「PM / 客服溝通用版本識別」;機制層面追溯由 git merge commit 的 parent 關係自動處理。
+> **Tag 放置原則**:
+> - 每個版本只打 **一個** `v<X.Y.Z>` tag,落於 release 端對應的 PR-merge commit(正向同步)或 hotfix PR-merge commit(緊急修正)上。
+> - 同步方向(正向/反向)、合流點等資訊,完全靠 PR-merge commit 的 `parent[1]` 追溯——`parent[1]` 直接指向同步來源(sync 分支 HEAD),提供完整的「兩分支歷史交會點」追溯能力,無需 patch-id 或 commit message 對照。
+> - tag 之主要角色為「人類可讀的版本識別」(PM / 客服溝通用);機制層面追溯由 git merge commit 的 parent 關係自動處理,無需額外語意 tag。
 
 > 💡 **改進建議 — 簡化 tag 機制(本 PR 提案)**
 >
@@ -150,7 +183,7 @@ type | 語意定義
 
 1. **禁止直接改寫 `main` / `release` 歷史** — 不對長期分支執行任何 `git rebase`、`commit --amend`、`push --force` 或 `tag -f`。所有整合動作透過 sync / 短期分支與 PR 完成。
 2. **雙向同步 PR 必用「Create a merge commit」** — sync-fwd / sync-back 之 PR 合併按鈕**僅允許** GitHub 的「Create a merge commit」選項;**禁用** Squash merge(會破壞雙 parent 結構)與 Rebase merge(會改寫 SHA 造成雙胞胎)。GitHub repo 設定應僅勾選 `Allow merge commits`,停用其餘兩個選項以防誤按。
-3. **Hotfix 不得累積** — 一個 `hotfix-v<X.Y.Z>-<name>` 對應一次 release,打完 `release/v*` tag 後**立即**啟動 `sync-back-v*` 回流 `main`,於下一個 hotfix 開立前完成。
+3. **Hotfix 不得累積** — 一個 `hotfix-v<X.Y.Z>-<name>` 對應一次 release,打完 `v<X.Y.Z>` tag 後**立即**啟動 `sync-back-v*` 回流 `main`,於下一個 hotfix 開立前完成。
 4. **Hotfix 為衝突解決之權威來源** — `sync-back-*` 與 `main` 衝突時,於 sync 分支本地解衝突,**一律以 release 上之 hotfix 為主**;main 上之既有實作雖意圖相近,但未經 production 驗證,需被覆蓋。
 5. **短期分支整合原則** — `feature-*` / `bug-*` / `hotfix-*` 在 PR-merge 前必須完成 `rebase -i` 整理 + 完整整合測試;`sync-fwd-*` / `sync-back-*` 不做本地 merge / rebase,但 PR CI 必須對「合併後狀態」完整測試。
 6. **PR 必附測試紀錄** — 任何進到 `main` 或 `release` 的 PR,**必須在 PR description 附上對應的測試紀錄**(編譯結果、單元測試輸出、整合測試報告、實機驗證截圖等,視變更性質而定)。缺測試紀錄者,Reviewer 直接 `Request changes`,Release Owner 不予 merge。CI 上線前,此為唯一的品質防線。
@@ -323,11 +356,11 @@ git push -u origin feature-notification-system
 | 分支類型 | 必選 Merge 方式 | 說明 |
 |---|---|---|
 | 短期分支 → 長期分支<br>(`feature-*` / `bug-*` / `refactor-*` / `test-*` / `chore-*` / `hotfix-*`) | **Rebase and merge** 或 **Squash and merge** | 短期分支已 `rebase -i` 整理,進主幹保持乾淨歷史。Squash 適用於 commit 凌亂或希望壓成單筆。 |
-| `sync-fwd-v*` → `release` | **Create a merge commit**(僅此選項) | sync 必須產生雙 parent 之 merge commit,作為 sync 事件錨點與 tag 對應點。 |
+| `sync-fwd-v*` → `release` | **Create a merge commit**(僅此選項) | sync 必須產生雙 parent 之 merge commit;`parent[1]` 是同步事件追溯的唯一機制錨點,`v<X.Y.Z>` tag 亦打於此 commit。 |
 | `sync-back-v*` → `main` | **Create a merge commit**(僅此選項) | 同上;`parent[0]` 由 PR 機制保證為 main HEAD,主線 `--first-parent` 視圖保持乾淨。 |
 
 > ⚠️ **嚴禁** sync-fwd / sync-back PR 使用 Squash 或 Rebase merge:
-> - Squash 破壞雙 parent 結構,使 sync/fwd 與 sync/back tag 失去追溯能力;
+> - Squash 破壞雙 parent 結構,使 PR-merge commit 失去同步事件追溯能力(無 `parent[1]` 可指向 sync 分支 HEAD);
 > - Rebase 改寫 commit SHA,造成雙胞胎 commit,引入 v1.0 之 Q3 重複衝突風險。
 >
 > 建議由 Repo Owner 在 `Settings → General → Pull Requests` 中**僅勾選** `Allow merge commits`,從工具層面強制。若團隊保留 Squash 給短期分支用,則須以人工紀律守住 sync 之選項。
@@ -358,18 +391,16 @@ git checkout release
 git pull --ff-only origin release
 
 # 打對外發佈 tag
-git tag -a release/v1.1.0 -m "Release v1.1.0"
-git push origin release/v1.1.0
+git tag -a v1.1.0 -m "Release v1.1.0"
+git push origin v1.1.0
 ```
 
 到 GitHub `Releases → Draft a new release`:
-- **Choose a tag** → `release/v1.1.0`(已存在)
+- **Choose a tag** → `v1.1.0`(已存在)
 - **Release title**:`v1.1.0`
 - **Description** → 點 `Generate release notes` 自動產 changelog
 - 上傳產出物(韌體 bin / SDK zip / 安裝包)
 - 按 `Publish release`
-
-> 內部追溯用的 `sync/fwd/v*`、`sync/back/v*`、`release/forked` **只 push tag,不發 Release**。
 
 ---
 
@@ -400,7 +431,7 @@ git push -u origin sync-fwd-v1.1.0
 > - **編譯**:Debug / Release 兩個 build configuration 都要過。
 > - **單元測試**:全套執行,通過率 100%。
 > - **整合測試**:涵蓋本輪同步含括的**所有 feature/bug** 的端到端情境,以「合併後狀態」(sync-fwd + release 之合併結果)為測試對象。
-> - **回歸測試**:跑過上一個 `release/v*` 的核心功能驗證,確認沒有把舊功能弄壞。
+> - **回歸測試**:跑過上一個 `v<X.Y.Z>` 的核心功能驗證,確認沒有把舊功能弄壞。
 > - **測試證據**:把上述結果(log、截圖、測試報告)貼進 PR description,Reviewer 才能據此 Approve。
 >
 > 若任一項未通過,**禁止合併 PR**,先於 sync-fwd 分支(或 main)修正後重新發起。`sync-fwd` 一旦進 release,後續 hotfix 與發佈都會建立在這個基礎上,任何漏網 bug 的修正成本都會大幅放大。
@@ -437,16 +468,15 @@ PR 開立後流程:
 git checkout release
 git pull --ff-only origin release
 
-# 在 release 端打發布 tag 與 sync-fwd tag(指向同一個 PR-merge commit)
-git tag -a release/v1.1.0 -m "Release v1.1.0"
-git tag -a sync/fwd/v1.1.0 -m "sync-fwd merge point for release v1.1.0"
-git push origin release/v1.1.0 sync/fwd/v1.1.0
+# 在 release 端打 v<X.Y.Z> tag(指向 PR-merge commit)
+git tag -a v1.1.0 -m "Release v1.1.0"
+git push origin v1.1.0
 
 # 清理本地 sync 分支(遠端通常已由 GitHub 自動刪)
 git branch -D sync-fwd-v1.1.0
 ```
 
-> **Tag 放置原則(v2.0)**:`release/v*` 與 `sync/fwd/v*` 同時打在 release 端的 PR-merge commit 上(同一 commit、不同語意)。merge commit 的 `parent[1]` 直接指向 sync-fwd HEAD(= 同步當下 main HEAD),無需另在 main 端打 tag。
+> **Tag 放置原則**:`v<X.Y.Z>` 打在 release 端的 PR-merge commit 上。merge commit 的 `parent[1]` 直接指向 sync-fwd HEAD(= 同步當下 main HEAD),正向同步事件由此 parent 關係追溯,無需另打方向性 tag、無需在 main 端打 tag。
 >
 > 同步完成後若要對外發佈 GitHub Release,接 §6 流程。
 
@@ -495,8 +525,8 @@ git push -u origin hotfix-v1.1.0-crash-on-boot
 git checkout release
 git pull --ff-only origin release
 
-git tag -a release/v1.1.1 -m "Hotfix release v1.1.1"
-git push origin release/v1.1.1
+git tag -a v1.1.1 -m "Hotfix release v1.1.1"
+git push origin v1.1.1
 ```
 
 → 接 §6 在 GitHub 發佈 Release。
@@ -505,7 +535,7 @@ git push origin release/v1.1.1
 
 ### 8.2 反向同步(`sync-back-v*` → `main`,紀律 3:hotfix 不得累積)
 
-**打完 `release/v1.1.1` 後立刻啟動**。
+**打完 `v1.1.1` 後立刻啟動**。
 
 #### Phase A — 本地準備(從 release 切 sync-back,不做本地 merge / rebase)
 
@@ -529,7 +559,7 @@ git push -u origin sync-back-v1.1.1
 | **base 分支** | `main` |
 | **compare 分支** | `sync-back-v1.1.1` |
 | **Title** | `[sync-back] backport release v1.1.1 hotfix to main` |
-| **Description** | 連結到 `release/v1.1.1` Release Notes;附整合測試紀錄(紀律 6) |
+| **Description** | 連結到 `v1.1.1` Release Notes;附整合測試紀錄(紀律 6) |
 | **Merge 方式** | **Create a merge commit**(僅此選項,紀律 2) |
 
 PR 開立後流程:
@@ -549,25 +579,19 @@ PR 開立後流程:
 3. Review + CI 全綠後,由 **Release Owner** 在 GitHub 按 **`Create a merge commit`** 按鈕。
 4. **嚴禁** 按 Squash 或 Rebase merge(紀律 2)。
 
-#### Phase C — 打 tag
+#### Phase C — 收尾(無需打 tag)
+
+反向回流不另打 tag——main 端 PR-merge commit 的 `parent[1]` 直接指向 release HEAD(= 同步當下的 `v1.1.1`),完整保留「兩分支歷史交會點」之追溯,無需 patch-id 或 commit message 對照。
 
 ```bash
-# 拉回 merge 後的最新 main(PR-merge commit 已落於 main HEAD)
+# 拉回 merge 後的最新 main
 git checkout main
 git pull --ff-only origin main
-
-# 在 main 端打 sync/back tag(指向 PR-merge commit)
-git tag -a sync/back/v1.1.1 -m "main commit synced back from release v1.1.1"
-git push origin sync/back/v1.1.1
 
 # 清理本地 sync 與 hotfix 分支
 git branch -D sync-back-v1.1.1
 git branch -D hotfix-v1.1.0-crash-on-boot   # 若本地還有
 ```
-
-> **Tag 放置原則(v2.0)**:`sync/back/v*` 打在 **main 端 PR-merge commit** 上。
-> merge commit 的 `parent[1]` 直接指向 release HEAD(= 同步當下的 release/v1.1.1),
-> 完整保留「兩分支歷史交會點」之追溯,無需 patch-id 或 commit message 對照。
 
 > ⚠️ **若 release 上含非 hotfix commit(版本號 bump、SKU patch、build flag 等)**,
 > 直接 PR-merge 會將這些變更一併帶入 main。此時建議改用 cherry-pick 子流程:
@@ -588,7 +612,7 @@ git branch -D hotfix-v1.1.0-crash-on-boot   # 若本地還有
 | 角色 | 權限 | 職責 |
 |---|---|---|
 | **Repo Owner** | Admin | 建 repo、設定 branch protection、CODEOWNERS |
-| **Release Owner** | Maintain | 唯一可 merge 進 `main` / `release` 的角色;打 `release/v*` tag;發 GitHub Release |
+| **Release Owner** | Maintain | 唯一可 merge 進 `main` / `release` 的角色;打 `v<X.Y.Z>` tag;發 GitHub Release |
 | **Developer** | Write | 建 feature/bug/hotfix 分支、發 PR、回應 review |
 | **Reviewer** | Write | 審查 PR、Approve / Request changes |
 
@@ -630,9 +654,7 @@ GitHub 設定路徑:
 
 ### 同步完成後(暫定)
 
-- [ ] tag 已打齊:
-  - 正向同步:`release/v<X.Y.Z>` + `sync/fwd/v<X.Y.Z>`(兩者皆在 release 端,指向同一 PR-merge commit)
-  - 反向同步:`sync/back/v<X.Y.Z>`(在 main 端,指向 PR-merge commit)
-- [ ] 對外發佈版本已升 GitHub Release(若為 `release/v*`)
+- [ ] `v<X.Y.Z>` tag 已打(於 release 端 PR-merge commit;反向同步無需打 tag)
+- [ ] 對外發佈版本已升 GitHub Release
 - [ ] Project 上對應卡片已移到 Done
 - [ ] 短期分支與 sync 分支(local + remote)已刪除
