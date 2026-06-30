@@ -1,6 +1,6 @@
 # Hit commit-message spec
 
-The authoritative commit-message rules for `hit-committer` (from the Hit manual §2.3). `git-github-flow` defers to this skill for the commit step, so this file is the single source of truth for the format.
+The authoritative commit-message rules for `hit-committer` (from the Hit manual §2.3). `github-flow` defers to this skill for the commit step, so this file is the single source of truth for the format.
 
 ## Format
 

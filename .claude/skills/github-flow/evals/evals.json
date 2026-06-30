@@ -1,0 +1,88 @@
+{
+  "skill_name": "github-flow",
+  "notes": "v4.0 model (release CAN merge back to main). Each eval runs in an isolated git sandbox (local bare remote 'hantop', no real GitHub). The subagent performs the full branch->atomic-commits->PR workflow; the PR is emitted as a gh command + body file instead of being created for real. Grading inspects the sandbox git history plus the emitted PR artifacts. Harness: ~/.agents/skills-bullpen/hit-committer-workspace/harness. Evals 1-3 (feature/bug/docs -> main) are unchanged from iteration-1; evals 5-7 exercise the new release->main backflow and the newest-vs-superseded hotfix split.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "feature-plus-stray-fix",
+      "prompt": "Commit everything and open a PR for me — I added the notifications feature (new module plus wired it into app.py) and also fixed that auth null-token check while I was in there.",
+      "expected_output": "Work moved OFF protected main onto a feature/* branch; the unrelated auth fix split into its own commit ([fix]) separate from the feature commit(s) ([feat]); all messages in [type] Description format; PR targets base main with a test-record section; push uses the detected remote 'hantop'.",
+      "assertions": [
+        {"text": "main has no new direct commits and a feature/* branch was created (protected-main guardrail honored)"},
+        {"text": "Branch follows <category>/<desc> form with the feature/ category"},
+        {"text": "The unrelated auth null-token fix is in its own commit, not lumped with the feature"},
+        {"text": "Commit types are correct: feature is [feat], the auth fix is [fix]"},
+        {"text": "Every commit title is [type] Description: lowercase type, capitalized English description, <=72 chars"},
+        {"text": "The emitted PR targets base main"},
+        {"text": "The PR body contains a test-record section (Discipline 5)"},
+        {"text": "Push/PR use the detected remote 'hantop', not a hardcoded 'origin'"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "bug-fix-with-issue",
+      "prompt": "I fixed the off-by-one in src/paginate.py — the last item on each page was getting dropped. Commit it and open a PR; this closes issue #17.",
+      "expected_output": "A bug/* branch off main with a single [fix] commit whose title states intent (not a bare 'Update'); PR base main; PR body includes 'Closes #17' and a test-record section.",
+      "assertions": [
+        {"text": "A bug/* branch was created off main; main has no new direct commits"},
+        {"text": "Exactly one [fix] commit for the change, with an intent-focused title (not a bare 'Update'/'Change')"},
+        {"text": "Commit title is [type] Description format, capitalized English, <=72 chars"},
+        {"text": "The emitted PR targets base main"},
+        {"text": "The PR body contains 'Closes #17'"},
+        {"text": "The PR body contains a test-record section (Discipline 5)"}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "docs-only",
+      "prompt": "Just updated the README with a Configuration and License section. Can you commit that and open the PR?",
+      "expected_output": "Docs-only change placed on a chore/* branch (the model has no docs/ branch) with a [docs] commit; main untouched; PR base main; test-record section present (N/A-with-reason acceptable for docs).",
+      "assertions": [
+        {"text": "The change is placed on a chore/* branch (no dedicated docs/ branch exists in the model)"},
+        {"text": "The commit type is [docs]"},
+        {"text": "main has no new direct commits; the work moved onto a branch"},
+        {"text": "The emitted PR targets base main"},
+        {"text": "The PR body contains a test-record section (an N/A-with-reason entry is acceptable for docs-only)"}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "hotfix-newest-line",
+      "prompt": "Urgent — the v1.2.0 release crashes on boot when device_profile is missing. I've patched src/app.py on the release line. Commit it as a hotfix and open the PR.",
+      "expected_output": "release/v1.2.0 is the newest (only) in-use line. Hotfix off it (not committed on the protected line); [hotfix] commit; hotfix PR base release/v1.2.0. Because it is the newest line, propagation to main is by MERGING release/v1.2.0 -> main (Create a merge commit) — NO port/* to main.",
+      "assertions": [
+        {"text": "Did NOT commit on the protected release/v1.2.0; created a hotfix/v1.2.0-<desc> branch from it"},
+        {"text": "The commit type is [hotfix]"},
+        {"text": "The hotfix PR targets base release/v1.2.0 (NOT main)"},
+        {"text": "The PR body contains a test-record section (Discipline 5)"},
+        {"text": "Propagation to main is by MERGING release/v1.2.0 -> main, with NO port/* to main"}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "hotfix-superseded-line",
+      "prompt": "Urgent — v1.1.0 crashes on boot when device_profile is missing (we also still maintain v1.2.0). I've patched src/app.py on the v1.1.0 release line. Commit it as a hotfix and open the PR.",
+      "expected_output": "release/v1.1.0 is superseded by release/v1.2.0. Hotfix off v1.1.0; hotfix PR base release/v1.1.0. Because a newer line exists, propagate by cherry-pick to BOTH main and release/v1.2.0 via port/<...>-to-<target> branches; do NOT merge the superseded v1.1.0 into main.",
+      "assertions": [
+        {"text": "Did NOT commit on the protected release/v1.1.0; created a hotfix/v1.1.0-<desc> branch from it"},
+        {"text": "The hotfix PR base is release/v1.1.0 (NOT main)"},
+        {"text": "Propagation cherry-picks to BOTH main and release/v1.2.0 via port/<...>-to-<target> branches"},
+        {"text": "Does NOT propose merging the superseded release/v1.1.0 -> main (no superseded-line backflow)"},
+        {"text": "The PR body contains a test-record section (Discipline 5)"}
+      ]
+    },
+    {
+      "id": 7,
+      "name": "release-finalize-sync",
+      "prompt": "I'm on release/v1.3.0 — the version bump to 1.3.0 and the changelog are already committed here. Open the PR to sync these back into main.",
+      "expected_output": "Finalize sync: release/v1.3.0 (newest) already carries the release-prep commit; open a backflow PR base main, head release/v1.3.0, merged with Create a merge commit. The skill must NOT move the clean release line onto a new branch, must NOT commit onto the protected line, and must NOT propose deleting it.",
+      "assertions": [
+        {"text": "The emitted PR has base main and head release/v1.3.0 (release line syncs back to main)"},
+        {"text": "Did NOT create a new short-lived branch off release/v1.3.0 and did NOT commit onto it (prep commit pre-existing, protected line unchanged vs hantop)"},
+        {"text": "The backflow PR notes/uses 'Create a merge commit'"},
+        {"text": "Does NOT propose deleting release/v1.3.0"},
+        {"text": "The PR body contains a test-record section (Discipline 5)"}
+      ]
+    }
+  ]
+}
